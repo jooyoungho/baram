@@ -123,7 +123,7 @@ struct TranslatorView: View {
                 // Stable native editor identity preserves focus and partial selections.
                 PlainEditor(text: source ? $model.input : $model.output, editable: source,
                             label: source ? "번역할 원문" : "번역 결과",
-                            selectionRequest: source ? nil : model.resultSelectionRequest,
+                            selectionRequest: source ? model.sourceSelectionRequest : nil,
                             onEdit: { if source { model.inputEdited() } },
                             onCopy: { model.notifyCopied(source: source) })
                     .opacity(source || !model.output.isEmpty ? 1 : 0)
@@ -248,7 +248,6 @@ struct TranslatorView: View {
     private var footerText: String {
         if let toast = model.toast { return toast }
         if model.shortcutError != nil { return "단축키 충돌 · 설정에서 변경해 주세요" }
-        if model.resultSelectionRequest != nil && !model.output.isEmpty { return "번역 완료 · ⌘C로 바로 복사" }
         if model.pinned && model.output.isEmpty && !model.busy { return "창이 고정되어 있어요" }
         return model.status
     }
@@ -272,7 +271,7 @@ struct TranslatorView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Text("바람 1.2 · 나만의 작은 번역기").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("바람 1.3 · 나만의 작은 번역기").font(.system(size: 10)).foregroundStyle(.tertiary)
                     Spacer()
                     Button("바람 종료") { NSApp.terminate(nil) }.controlSize(.small)
                 }

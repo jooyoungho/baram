@@ -10,6 +10,8 @@ APP_PATH="${BARAM_APP_PATH:-dist/Baram.app}"
 APP_PATH="${APP_PATH:A}"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$BIN_DIR/Baram" "$APP_PATH/Contents/MacOS/Baram"
+# SwiftPM release builds can retain debug records containing local build paths.
+xcrun strip -S "$APP_PATH/Contents/MacOS/Baram"
 cp Resources/Info.plist "$APP_PATH/Contents/Info.plist"
 if [[ -f Resources/AppIcon.icns ]]; then
   cp Resources/AppIcon.icns "$APP_PATH/Contents/Resources/"

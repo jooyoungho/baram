@@ -40,13 +40,12 @@ final class TranslatorModel: ObservableObject {
     @Published var history: [TranslationRecord] = []
     @Published var shortcut: KeyboardShortcut { didSet { shortcut.save(to: defaults) } }
     @Published var shortcutError: String?
-    @Published private(set) var resultSelectionRequest: UUID?
+    @Published private(set) var sourceSelectionRequest: UUID?
 
     private let defaults: UserDefaults
     private var pending: Request?
     var activeRequestID: UUID? { pending?.id }
     private var generation = UUID()
-    private var selectionIntentID: UUID?
     private var debounce: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
     private let speaker = AVSpeechSynthesizer()
@@ -105,7 +104,7 @@ final class TranslatorModel: ObservableObject {
         status = "기기 내 번역"
     }
 
-    func pasteAndTranslate(selectResult: Bool = false, from pasteboard: NSPasteboard = .general) {
+    func pasteAndTranslate(selectSource: Bool = false, from pasteboard: NSPasteboard = .general) {
         page = .translate
         onRequestShow?()
         guard let text = PlainClipboard.read(from: pasteboard), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -114,10 +113,13 @@ final class TranslatorModel: ObservableObject {
             return
         }
         input = text
-        translate(selectResult: selectResult)
+        translate()
+        // Clipboard selection belongs to the imported original, independent of
+        // the asynchronous translation (including failures or unsupported text).
+        if selectSource { sourceSelectionRequest = UUID() }
     }
 
-    func translate(selectResult: Bool = false) {
+    func translate() {
         debounce?.cancel()
         let text = input
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { invalidate(); return }
@@ -126,7 +128,6 @@ final class TranslatorModel: ObservableObject {
         guard text.count <= 30000 else { error = "한 번에 30,000자까지 번역할 수 있어요. 원문을 나누어 주세요."; return }
         let id = UUID()
         generation = id
-        selectionIntentID = selectResult ? id : nil
         let detected = sourceID == "auto" ? AppLanguage.detect(text) : sourceID
         detectedID = detected
         let target = AppLanguage.target(for: detected, preferred: targetID, smart: smartPair && sourceID == "auto")
@@ -135,7 +136,6 @@ final class TranslatorModel: ObservableObject {
         if detected == target {
             output = text
             status = "같은 언어 · 원문 유지"
-            requestResultSelection(for: id)
             return
         }
         let request = Request(id: id, text: text, source: sourceID == "auto" ? nil : sourceID, target: target)
@@ -219,19 +219,10 @@ final class TranslatorModel: ObservableObject {
             history = Array(history.prefix(100))
             persistHistory()
         }
-        requestResultSelection(for: requestID)
     }
 
     func cancelAutomaticSelection() {
-        selectionIntentID = nil
-        resultSelectionRequest = nil
-    }
-
-    private func requestResultSelection(for requestID: UUID) {
-        guard selectionIntentID == requestID, generation == requestID,
-              page == .translate, !output.isEmpty else { return }
-        selectionIntentID = nil
-        resultSelectionRequest = requestID
+        sourceSelectionRequest = nil
     }
 
     static func message(for error: Error) -> String {

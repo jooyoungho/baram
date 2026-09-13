@@ -188,7 +188,7 @@ final class TranslatorModelTests: XCTestCase {
     }
 
     @MainActor
-    func testShortcutClipboardTranslationSelectsOnlyAfterResultArrives() throws {
+    func testShortcutSelectsClipboardSourceBeforeTranslationAndKeepsSelectionOnCompletion() throws {
         let (model, _, _, cleanUp) = fixture()
         defer { cleanUp() }
         let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
@@ -197,21 +197,21 @@ final class TranslatorModelTests: XCTestCase {
         model.sourceID = "en"
         model.targetID = "ko"
 
-        model.pasteAndTranslate(selectResult: true, from: pasteboard)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
         let requestID = try XCTUnwrap(model.activeRequestID)
+        let selectionID = try XCTUnwrap(model.sourceSelectionRequest)
         XCTAssertEqual(model.input, "Hello from the clipboard")
         XCTAssertTrue(model.busy)
         XCTAssertEqual(model.output, "")
-        XCTAssertNil(model.resultSelectionRequest)
 
         model.completeTranslation(response(source: model.input, target: "클립보드에서 인사합니다"), requestID: requestID)
         XCTAssertEqual(model.output, "클립보드에서 인사합니다")
         XCTAssertFalse(model.busy)
-        XCTAssertEqual(model.resultSelectionRequest, requestID)
+        XCTAssertEqual(model.sourceSelectionRequest, selectionID)
     }
 
     @MainActor
-    func testManualTranslationDoesNotRequestResultFocus() throws {
+    func testManualTranslationAndPasteDoNotRequestAutomaticFocus() throws {
         let (model, _, _, cleanUp) = fixture()
         defer { cleanUp() }
         model.sourceID = "en"
@@ -222,7 +222,14 @@ final class TranslatorModelTests: XCTestCase {
 
         model.completeTranslation(response(source: model.input, target: "직접 입력한 문장"), requestID: requestID)
         XCTAssertEqual(model.output, "직접 입력한 문장")
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertNil(model.sourceSelectionRequest)
+
+        let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("Manually pasted text", forType: .string)
+        model.pasteAndTranslate(from: pasteboard)
+        XCTAssertEqual(model.input, "Manually pasted text")
+        XCTAssertNil(model.sourceSelectionRequest)
     }
 
     @MainActor
@@ -232,16 +239,22 @@ final class TranslatorModelTests: XCTestCase {
         model.sourceID = "en"
         model.targetID = "ko"
         model.autoTranslate = false
-        model.input = "Old clipboard text"
-        model.translate(selectResult: true)
+        let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("Old clipboard text", forType: .string)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
         let oldRequestID = try XCTUnwrap(model.activeRequestID)
-        model.input = "New clipboard text"
-        model.translate(selectResult: true)
+        let oldSelectionID = try XCTUnwrap(model.sourceSelectionRequest)
+        pasteboard.clearContents()
+        pasteboard.setString("New clipboard text", forType: .string)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
         let newRequestID = try XCTUnwrap(model.activeRequestID)
+        let newSelectionID = try XCTUnwrap(model.sourceSelectionRequest)
+        XCTAssertNotEqual(oldSelectionID, newSelectionID)
 
         model.completeTranslation(response(source: "Old clipboard text", target: "이전 결과"), requestID: oldRequestID)
         XCTAssertEqual(model.output, "")
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertEqual(model.sourceSelectionRequest, newSelectionID)
         XCTAssertTrue(model.busy)
         XCTAssertEqual(model.activeRequestID, newRequestID)
 
@@ -249,7 +262,7 @@ final class TranslatorModelTests: XCTestCase {
         model.inputEdited()
         model.completeTranslation(response(source: "New clipboard text", target: "새 결과"), requestID: newRequestID)
         XCTAssertEqual(model.output, "")
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertNil(model.sourceSelectionRequest)
         XCTAssertFalse(model.busy)
     }
 
@@ -260,56 +273,69 @@ final class TranslatorModelTests: XCTestCase {
             defer { cleanUp() }
             model.sourceID = "en"
             model.targetID = "ko"
-            model.input = "A pending translation"
-            model.translate(selectResult: true)
+            let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
+            defer { pasteboard.releaseGlobally() }
+            pasteboard.setString("A pending translation", forType: .string)
+            model.pasteAndTranslate(selectSource: true, from: pasteboard)
             let requestID = try XCTUnwrap(model.activeRequestID)
+            XCTAssertNotNil(model.sourceSelectionRequest)
 
             if destination == .translate { model.cancelAutomaticSelection() }
             else { model.page = destination }
+            XCTAssertNil(model.sourceSelectionRequest)
             model.completeTranslation(response(source: model.input, target: "완료된 번역"), requestID: requestID)
             XCTAssertEqual(model.output, "완료된 번역")
-            XCTAssertNil(model.resultSelectionRequest)
+            XCTAssertNil(model.sourceSelectionRequest)
         }
     }
 
     @MainActor
-    func testSameLanguageShortcutSelectsPlainResultAndEmptyClipboardClearsSelection() {
+    func testSameLanguageShortcutSelectsOriginalAndEmptyClipboardClearsSelection() {
         let (model, _, _, cleanUp) = fixture()
         defer { cleanUp() }
         model.sourceID = "ko"
         model.targetID = "ko"
-        model.input = "  제목\n\n본문\t항목  "
-        model.translate(selectResult: true)
-        XCTAssertEqual(model.output, model.input)
-        XCTAssertFalse(model.busy)
-        XCTAssertNotNil(model.resultSelectionRequest)
-
         let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
+        let original = "  제목\n\n본문\t항목  "
+        pasteboard.setString(original, forType: .string)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
+        XCTAssertEqual(model.input, original)
+        XCTAssertEqual(model.output, model.input)
+        XCTAssertFalse(model.busy)
+        XCTAssertNotNil(model.sourceSelectionRequest)
+
         pasteboard.clearContents()
-        model.pasteAndTranslate(selectResult: true, from: pasteboard)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
         XCTAssertNotNil(model.error)
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertNil(model.sourceSelectionRequest)
         XCTAssertEqual(model.output, "")
         XCTAssertFalse(model.busy)
     }
 
     @MainActor
-    func testEmptyResultAndRejectedInputDoNotRequestSelection() throws {
+    func testSourceRemainsSelectableWhenTranslationReturnsNothingOrInputExceedsLimit() throws {
         let (model, _, _, cleanUp) = fixture()
         defer { cleanUp() }
         model.sourceID = "en"
         model.targetID = "ko"
-        model.input = "Text without a returned translation"
-        model.translate(selectResult: true)
+        let pasteboard = NSPasteboard(name: .init("BaramTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("Text without a returned translation", forType: .string)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
         let requestID = try XCTUnwrap(model.activeRequestID)
+        let selectionID = try XCTUnwrap(model.sourceSelectionRequest)
         model.completeTranslation(response(source: model.input, target: ""), requestID: requestID)
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertEqual(model.sourceSelectionRequest, selectionID)
 
-        model.input = String(repeating: "x", count: 30_001)
-        model.translate(selectResult: true)
+        let longOriginal = String(repeating: "x", count: 30_001)
+        pasteboard.clearContents()
+        pasteboard.setString(longOriginal, forType: .string)
+        model.pasteAndTranslate(selectSource: true, from: pasteboard)
+        XCTAssertEqual(model.input, longOriginal)
         XCTAssertNotNil(model.error)
-        XCTAssertNil(model.resultSelectionRequest)
+        XCTAssertNotNil(model.sourceSelectionRequest)
+        XCTAssertNotEqual(model.sourceSelectionRequest, selectionID)
         XCTAssertNil(model.activeRequestID)
         XCTAssertFalse(model.busy)
     }

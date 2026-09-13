@@ -63,7 +63,7 @@ struct PlainEditor: NSViewRepresentable {
             view.setSelectedRange(NSRange(location: min(selected.location, (text as NSString).length), length: 0))
             view.undoManager?.removeAllActions()
         }
-        context.coordinator.selectResultIfRequested(in: view)
+        context.coordinator.selectAllIfRequested(in: view)
     }
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         (scroll as? EditorScrollView)?.onWindowChange = nil
@@ -92,11 +92,11 @@ struct PlainEditor: NSViewRepresentable {
                 ) { [weak self, weak view] _ in
                     MainActor.assumeIsolated {
                         guard let view else { return }
-                        self?.selectResultIfRequested(in: view)
+                        self?.selectAllIfRequested(in: view)
                     }
                 })
             }
-            selectResultIfRequested(in: view)
+            selectAllIfRequested(in: view)
         }
 
         func stopObserving() {
@@ -106,8 +106,8 @@ struct PlainEditor: NSViewRepresentable {
             scheduledText = nil
         }
 
-        func selectResultIfRequested(in view: NSTextView) {
-            guard !parent.editable, let request = parent.selectionRequest,
+        func selectAllIfRequested(in view: NSTextView) {
+            guard let request = parent.selectionRequest,
                   request != selectedRequest, !parent.text.isEmpty else { return }
             let expectedText = parent.text
             guard scheduledRequest != request || scheduledText != expectedText else { return }
@@ -119,7 +119,7 @@ struct PlainEditor: NSViewRepresentable {
                       self.scheduledText == expectedText else { return }
                 self.scheduledRequest = nil
                 self.scheduledText = nil
-                guard let view, !self.parent.editable, !view.isEditable,
+                guard let view, view.isSelectable,
                       self.parent.selectionRequest == request, self.selectedRequest != request,
                       self.parent.text == expectedText, view.string == expectedText,
                       !view.hasMarkedText(), !view.isHiddenOrHasHiddenAncestor,

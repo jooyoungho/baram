@@ -8,6 +8,7 @@ xcuserdata/
 *.app/
 *.dSYM/
 *.zip
+*.dmg
 *.log
 work/
 

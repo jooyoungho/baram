@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.onCopyResult = { [weak self] in guard let self else { return }; self.model.copy(self.model.output) }
         model.onRequestShow = { [weak self] in self?.showPanel() }
         model.onRequestClose = { [weak self] in self?.hidePanel() }
-        hotKey.onPressed = { [weak self] in self?.model.pasteAndTranslate(selectResult: true) }
+        hotKey.onPressed = { [weak self] in self?.model.pasteAndTranslate(selectSource: true) }
         hotKey.onRecordedShortcut = { shortcut in
             NotificationCenter.default.post(name: .baramRecordedShortcut, object: shortcut)
         }
