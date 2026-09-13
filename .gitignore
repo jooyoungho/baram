@@ -1,0 +1,28 @@
+# Swift / Xcode build products and local state
+.build/
+.swiftpm/
+DerivedData/
+dist/
+xcuserdata/
+*.xcuserstate
+*.app/
+*.dSYM/
+*.zip
+*.log
+work/
+
+# macOS metadata
+.DS_Store
+__MACOSX/
+._*
+
+# Local configuration, credentials, and optional translation history
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+history.json
